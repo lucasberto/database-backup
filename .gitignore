@@ -1,0 +1,30 @@
+# Sensitive files
+private-key.txt
+public-key.txt
+key.txt
+credentials.yaml
+credentials.yaml.age
+config.yaml
+
+# Compiled binaries
+encrypt
+backup
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db

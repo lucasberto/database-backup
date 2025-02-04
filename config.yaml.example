@@ -1,0 +1,33 @@
+private_key_path: "/path/to/private-key.txt"
+servers:
+  - name: "Production DB"
+    host: "db.example.com"
+    port: 22
+    user: "root"
+    auth_type: "key"
+    key_path: "/path/to/.ssh/id_rsa"
+    output_path: "/path/to/backups"
+    credentials_key: "prod_ssh"
+    database:
+      type: "mysql"
+      port: 3306
+      name: "main_database"
+      user: "dbuser"
+      credentials_key: "prod_db"
+      backup_all: false
+
+  - name: "Development DB"
+    host: "dev-db.example.com"
+    port: 22
+    user: "root"
+    auth_type: "key"
+    key_path: "/path/to/.ssh/id_rsa"
+    output_path: "/path/to/backups"
+    credentials_key: "dev_ssh"
+    database:
+      type: "mysql"
+      port: 3306
+      name: "dev_database"
+      user: "dbuser"
+      credentials_key: "dev_db"
+      backup_all: true # true or false - if true, will backup all databases in the server
