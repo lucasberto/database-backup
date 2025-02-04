@@ -9,7 +9,6 @@ import (
 type ProgressWriter struct {
 	Writer io.Writer
 	Bar    *mpb.Bar
-	Total  int64
 }
 
 func (pw *ProgressWriter) Write(p []byte) (int, error) {

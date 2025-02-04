@@ -3,7 +3,6 @@ package mysql
 import (
 	"bytes"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/lucasberto/database-backup-tool/internal/ssh"
@@ -24,31 +23,6 @@ func (m *MySQL) Dump(sshClient *ssh.Client, dbName, user, password string, port 
 	}
 	defer session.Close()
 
-	sizeSession, err := sshClient.GetSSHClient().NewSession()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create size session: %v", err)
-	}
-
-	var sizeOutput bytes.Buffer
-	sizeSession.Stdout = &sizeOutput
-
-	sizeCmd := fmt.Sprintf(`mysql -N -h127.0.0.1 -P%d -u%s -p%s -e "
-        SELECT SUM(data_length + index_length) 
-        FROM information_schema.tables 
-        WHERE table_schema = '%s'
-        GROUP BY table_schema;"`, port, user, password, dbName)
-
-	err = sizeSession.Run(sizeCmd)
-	sizeSession.Close()
-
-	var estimatedSize int64 = 100 * 1024 * 1024
-	if err == nil {
-		size, err := strconv.ParseInt(strings.TrimSpace(sizeOutput.String()), 10, 64)
-		if err == nil {
-			estimatedSize = size
-		}
-	}
-
 	bar := progress.AddBar(-1,
 		mpb.PrependDecorators(
 			decor.Name(fmt.Sprintf("Dumping %s ", dbName), decor.WC{W: len(dbName) + 20, C: decor.DindentRight}),
@@ -59,7 +33,7 @@ func (m *MySQL) Dump(sshClient *ssh.Client, dbName, user, password string, port 
 	// var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	cpw := NewCompressedProgressWriter(bar, estimatedSize)
+	cpw := NewCompressedProgressWriter(bar)
 	session.Stdout = cpw
 	session.Stderr = &stderr
 

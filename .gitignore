@@ -6,9 +6,6 @@ credentials.yaml
 credentials.yaml.age
 config.yaml
 
-# Compiled binaries
-encrypt
-backup
 
 # Go specific
 *.exe

@@ -1,4 +1,6 @@
 private_key_path: "/path/to/private-key.txt"
+max_concurrent_servers: 5
+max_concurrent_databases: 3
 servers:
   - name: "Production DB"
     host: "db.example.com"

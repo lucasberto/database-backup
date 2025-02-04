@@ -31,8 +31,10 @@ type Database struct {
 }
 
 type Config struct {
-	PrivateKeyPath string   `yaml:"private_key_path"`
-	Servers        []Server `yaml:"servers"`
+	PrivateKeyPath         string   `yaml:"private_key_path"`
+	Servers                []Server `yaml:"servers"`
+	MaxConcurrentServers   int      `yaml:"max_concurrent_servers"`
+	MaxConcurrentDatabases int      `yaml:"max_concurrent_databases"`
 }
 
 func LoadConfig(filename string) (*Config, error) {

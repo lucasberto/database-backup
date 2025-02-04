@@ -13,12 +13,11 @@ type CompressedProgressWriter struct {
 	buffer     *bytes.Buffer
 }
 
-func NewCompressedProgressWriter(bar *mpb.Bar, total int64) *CompressedProgressWriter {
+func NewCompressedProgressWriter(bar *mpb.Bar) *CompressedProgressWriter {
 	buf := &bytes.Buffer{}
 	pw := &ProgressWriter{
 		Writer: buf,
 		Bar:    bar,
-		Total:  total,
 	}
 
 	return &CompressedProgressWriter{
