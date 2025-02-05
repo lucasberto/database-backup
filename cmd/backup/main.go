@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,15 +32,38 @@ func ensureOutputDir(path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
-func backupDatabase(client *ssh.Client, serverName, serverDir, dbName string, dbConfig config.Database, mysqlBackup *mysql.MySQL, progress *mpb.Progress, resultsChan chan<- BackupResult) {
+func cleanupOldBackups(serverDir string, retentionDays int) error {
+	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
+
+	entries, err := os.ReadDir(serverDir)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql.gz") {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			if info.ModTime().Before(cutoffTime) {
+				fullPath := filepath.Join(serverDir, entry.Name())
+				if err := os.Remove(fullPath); err != nil {
+					return fmt.Errorf("failed to remove old backup %s: %v", fullPath, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func backupDatabase(client *ssh.Client, serverName, serverDir, dbName string, mysqlBackup *mysql.MySQL, progress *mpb.Progress, resultsChan chan<- BackupResult) {
 	dbStartTime := time.Now()
 
 	dump, err := mysqlBackup.Dump(
 		client,
 		dbName,
-		dbConfig.User,
-		dbConfig.Password,
-		dbConfig.Port,
 		progress,
 	)
 	if err != nil {
@@ -126,6 +150,20 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 		return
 	}
 
+	err = mysqlBackup.CreateConfigFile(client, server.Database.User, server.Database.Password, server.Database.Port)
+	if err != nil {
+		resultsChan <- BackupResult{
+			ServerName: server.Name,
+			Success:    false,
+			Error:      err,
+			StartTime:  time.Now(),
+			EndTime:    time.Now(),
+		}
+		return
+	}
+
+	defer mysqlBackup.CleanupConfigFile(client)
+
 	var databasesToBackup []string
 	if server.Database.BackupAll {
 		databases, err := mysqlBackup.ListDatabases(
@@ -158,12 +196,18 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 			defer dbWg.Done()
 			dbSemaphore <- struct{}{}
 			defer func() { <-dbSemaphore }()
-			backupDatabase(client, server.Name, serverDir, db, server.Database, mysqlBackup, progress, resultsChan)
+			backupDatabase(client, server.Name, serverDir, db, mysqlBackup, progress, resultsChan)
 		}(dbName)
 	}
 
 	dbWg.Wait()
 	client.Close()
+
+	if server.RetentionDays > 0 {
+		if err := cleanupOldBackups(serverDir, server.RetentionDays); err != nil {
+			log.Printf("Warning: failed to cleanup old backups for %s: %v", server.Name, err)
+		}
+	}
 }
 
 func main() {
@@ -184,18 +228,26 @@ func main() {
 	}
 
 	progress := mpb.New(
-		mpb.WithWidth(64),
-		mpb.WithRefreshRate(500*time.Millisecond),
+
+		mpb.WithWidth(30),
+		mpb.WithRefreshRate(180*time.Millisecond),
 		mpb.WithAutoRefresh(),
 	)
 
 	mysqlBackup := mysql.New()
 	var wg sync.WaitGroup
 	serverSemaphroe := make(chan struct{}, globalConfig.MaxConcurrentServers)
-	resultsChan := make(chan BackupResult, 1000)
+	resultsChan := make(chan BackupResult)
 	startTime := time.Now()
 
 	fmt.Println("Starting backup...")
+
+	var results []BackupResult
+	go func() {
+		for result := range resultsChan {
+			results = append(results, result)
+		}
+	}()
 
 	for _, server := range cfg.Servers {
 
@@ -235,15 +287,15 @@ func main() {
 	var totalSuccess, totalFailure int
 	var totalSize int64
 
-	for result := range resultsChan {
+	for _, result := range results {
 		if result.Success {
 			totalSuccess++
 			totalSize += result.FileSize
-			fmt.Printf("✅ %s - %s backed up successfully (%.2f MB, took %s)\n",
+			fmt.Printf("✅ %s - %s backed up successfully (%.2f MB, took %.1fs)\n",
 				result.ServerName,
 				result.Database,
 				float64(result.FileSize)/1024/1024,
-				result.EndTime.Sub(result.StartTime),
+				result.EndTime.Sub(result.StartTime).Seconds(),
 			)
 		} else {
 			totalFailure++
@@ -257,8 +309,8 @@ func main() {
 
 	// Print summary
 	fmt.Printf("\nBackup Summary:\n")
-	fmt.Printf("Total time: %s\n", time.Since(startTime))
-	fmt.Printf("Successful backups: %d\n", totalSuccess)
+	fmt.Printf("Total time: %s\n", time.Since(startTime).Round(time.Second))
+	fmt.Printf("Successful backups: %d / %d\n", totalSuccess, totalSuccess+totalFailure)
 	fmt.Printf("Failed backups: %d\n", totalFailure)
 	fmt.Printf("Total backup size: %.2f MB\n", float64(totalSize)/1024/1024)
 

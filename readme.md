@@ -16,8 +16,8 @@ A Go-based tool for automated MySQL database backups over SSH with encrypted cre
 
 - Go 1.19 or higher
 - age encryption tool (`age-keygen`)
-- SSH access to your database servers
-- MySQL/MariaDB on remote servers
+- SSH access to your database servers (currently only supports key-based authentication)
+- MySQL on remote servers (I plan to add support for other engines in the future)
 
 ## Installation
 

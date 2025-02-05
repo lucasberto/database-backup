@@ -18,6 +18,7 @@ type Server struct {
 	OutputPath     string   `yaml:"output_path"`
 	CredentialsKey string   `yaml:"credentials_key"`
 	Database       Database `yaml:"database"`
+	RetentionDays  int      `yaml:"retention_days"`
 }
 
 type Database struct {

@@ -16,40 +16,69 @@ func New() *MySQL {
 	return &MySQL{}
 }
 
-func (m *MySQL) Dump(sshClient *ssh.Client, dbName, user, password string, port int, progress *mpb.Progress) ([]byte, error) {
+func (m *MySQL) CreateConfigFile(sshClient *ssh.Client, user, password string, port int) error {
+	session, err := sshClient.GetSSHClient().NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create session: %v", err)
+	}
+	defer session.Close()
+
+	tmpConfig := fmt.Sprintf(`[client]
+host=127.0.0.1
+user=%s
+password=%s
+port=%d`, user, password, port)
+
+	setupCmd := fmt.Sprintf("rm -f /tmp/mydump.cnf && cat > /tmp/mydump.cnf << 'EOL'\n%s\nEOL\nchmod 600 /tmp/mydump.cnf", tmpConfig)
+	return session.Run(setupCmd)
+}
+
+func (m *MySQL) CleanupConfigFile(sshClient *ssh.Client) error {
+	session, err := sshClient.GetSSHClient().NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create session: %v", err)
+	}
+	defer session.Close()
+
+	return session.Run("rm -f /tmp/mydump.cnf")
+}
+
+func (m *MySQL) Dump(sshClient *ssh.Client, dbName string, progress *mpb.Progress) ([]byte, error) {
+
+	// create new session for the actual dump
 	session, err := sshClient.GetSSHClient().NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
 	defer session.Close()
 
-	bar := progress.AddBar(-1,
+	displayName := dbName
+	if len(dbName) > 40 {
+		displayName = dbName[:37] + "..."
+	}
+
+	bar := progress.New(-1,
+		mpb.BarStyle(),
+		mpb.BarRemoveOnComplete(),
 		mpb.PrependDecorators(
-			decor.Name(fmt.Sprintf("Dumping %s ", dbName), decor.WC{W: len(dbName) + 20, C: decor.DindentRight}),
+			decor.Name(fmt.Sprintf("Dumping %s ", displayName), decor.WC{W: 45, C: decor.DindentRight}),
 			decor.CurrentKibiByte("%.2f"),
 		),
 	)
 
-	// var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	cpw := NewCompressedProgressWriter(bar)
 	session.Stdout = cpw
 	session.Stderr = &stderr
+	defer cpw.Close()
 
-	cmd := fmt.Sprintf("mysqldump -h127.0.0.1 -P%d -u%s -p%s %s",
-		port,
-		user,
-		password,
-		dbName,
-	)
+	cmd := fmt.Sprintf("mysqldump --defaults-file=/tmp/mydump.cnf %s", dbName)
 
 	err = session.Run(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("mysqldump failed: %v: %s", err, stderr.String())
 	}
-
-	cpw.Close()
 
 	return cpw.Bytes(), nil
 }

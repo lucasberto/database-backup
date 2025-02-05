@@ -10,6 +10,7 @@ servers:
     key_path: "/path/to/.ssh/id_rsa"
     output_path: "/path/to/backups"
     credentials_key: "prod_ssh"
+    retention_days: 30    # 0 for infinite retention period
     database:
       type: "mysql"
       port: 3306
@@ -26,6 +27,7 @@ servers:
     key_path: "/path/to/.ssh/id_rsa"
     output_path: "/path/to/backups"
     credentials_key: "dev_ssh"
+    retention_days: 30
     database:
       type: "mysql"
       port: 3306
