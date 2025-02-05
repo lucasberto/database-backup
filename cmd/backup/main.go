@@ -162,8 +162,6 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 		return
 	}
 
-	defer mysqlBackup.CleanupConfigFile(client)
-
 	var databasesToBackup []string
 	if server.Database.BackupAll {
 		databases, err := mysqlBackup.ListDatabases(
@@ -201,6 +199,19 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 	}
 
 	dbWg.Wait()
+
+	err = mysqlBackup.CleanupConfigFile(client)
+	if err != nil {
+		resultsChan <- BackupResult{
+			ServerName: server.Name,
+			Success:    false,
+			Error:      err,
+			StartTime:  time.Now(),
+			EndTime:    time.Now(),
+		}
+		return
+	}
+
 	client.Close()
 
 	if server.RetentionDays > 0 {

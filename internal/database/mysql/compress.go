@@ -39,5 +39,6 @@ func (cpw *CompressedProgressWriter) Close() error {
 }
 
 func (cpw *CompressedProgressWriter) Bytes() []byte {
+	cpw.Close()
 	return cpw.buffer.Bytes()
 }
