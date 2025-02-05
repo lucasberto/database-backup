@@ -25,3 +25,5 @@ config.yaml
 # OS specific
 .DS_Store
 Thumbs.db
+
+backup-tool-linux
