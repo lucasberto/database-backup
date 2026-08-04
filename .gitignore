@@ -27,3 +27,6 @@ config.yaml
 Thumbs.db
 
 backup-tool-linux
+
+# Runtime
+logs/
