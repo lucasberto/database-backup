@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,7 +15,10 @@ import (
 	"github.com/lucasberto/database-backup-tool/internal/database/mysql"
 	"github.com/lucasberto/database-backup-tool/internal/ssh"
 	"github.com/vbauerster/mpb/v8"
+	"golang.org/x/term"
 )
+
+const Version = "v1.7.0"
 
 type BackupResult struct {
 	ServerName string
@@ -58,31 +62,23 @@ func cleanupOldBackups(serverDir string, retentionDays int) error {
 	return nil
 }
 
-func backupDatabase(client *ssh.Client, serverName, serverDir, dbName string, mysqlBackup *mysql.MySQL, progress *mpb.Progress, resultsChan chan<- BackupResult) {
+func backupDatabase(client *ssh.Client, serverName, serverDir, dbName, remoteID string, mysqlBackup *mysql.MySQL, progress *mpb.Progress, resultsChan chan<- BackupResult) {
 	dbStartTime := time.Now()
-
-	dump, err := mysqlBackup.Dump(
-		client,
-		dbName,
-		progress,
-	)
-	if err != nil {
-		resultsChan <- BackupResult{
-			ServerName: serverName,
-			Database:   dbName,
-			Success:    false,
-			Error:      err,
-			StartTime:  dbStartTime,
-			EndTime:    time.Now(),
-		}
-		return
-	}
 
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
 	filename := fmt.Sprintf("%s_%s.sql.gz", dbName, timestamp)
 	fullPath := filepath.Join(serverDir, filename)
 
-	if err := os.WriteFile(fullPath, dump, 0644); err != nil {
+	err := mysqlBackup.Dump(
+		client,
+		dbName,
+		fullPath,
+		remoteID,
+		progress,
+	)
+	if err != nil {
+		// Clean up partial file on error
+		os.Remove(fullPath)
 		resultsChan <- BackupResult{
 			ServerName: serverName,
 			Database:   dbName,
@@ -150,7 +146,9 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 		return
 	}
 
-	err = mysqlBackup.CreateConfigFile(client, server.Database.User, server.Database.Password, server.Database.Port)
+	remoteID := mysql.NewRemoteID()
+
+	err = mysqlBackup.CreateConfigFile(client, server.Database.User, server.Database.Password, server.Database.Port, remoteID)
 	if err != nil {
 		resultsChan <- BackupResult{
 			ServerName: server.Name,
@@ -194,13 +192,13 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 			defer dbWg.Done()
 			dbSemaphore <- struct{}{}
 			defer func() { <-dbSemaphore }()
-			backupDatabase(client, server.Name, serverDir, db, mysqlBackup, progress, resultsChan)
+			backupDatabase(client, server.Name, serverDir, db, remoteID, mysqlBackup, progress, resultsChan)
 		}(dbName)
 	}
 
 	dbWg.Wait()
 
-	err = mysqlBackup.CleanupConfigFile(client)
+	err = mysqlBackup.CleanupConfigFile(client, remoteID)
 	if err != nil {
 		resultsChan <- BackupResult{
 			ServerName: server.Name,
@@ -222,6 +220,12 @@ func backupServer(server config.Server, mysqlBackup *mysql.MySQL, progress *mpb.
 }
 
 func main() {
+	unlock, err := acquireInstanceLock()
+	if err != nil {
+		log.Fatalf("Error: %v", err)
+	}
+	defer unlock()
+
 	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
@@ -238,12 +242,16 @@ func main() {
 		log.Fatalf("Error loading credentials: %v", err)
 	}
 
-	progress := mpb.New(
-
+	mpbOpts := []mpb.ContainerOption{
 		mpb.WithWidth(30),
-		mpb.WithRefreshRate(180*time.Millisecond),
+		mpb.WithRefreshRate(180 * time.Millisecond),
 		mpb.WithAutoRefresh(),
-	)
+	}
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		// Sem TTY (cron/systemd): suprime as barras para não poluir o log
+		mpbOpts = append(mpbOpts, mpb.WithOutput(io.Discard))
+	}
+	progress := mpb.New(mpbOpts...)
 
 	mysqlBackup := mysql.New()
 	var wg sync.WaitGroup
@@ -251,6 +259,7 @@ func main() {
 	resultsChan := make(chan BackupResult)
 	startTime := time.Now()
 
+	fmt.Printf("Database Backup Tool %s\n", Version)
 	fmt.Println("Starting backup...")
 
 	var results []BackupResult
@@ -325,4 +334,8 @@ func main() {
 	fmt.Printf("Failed backups: %d\n", totalFailure)
 	fmt.Printf("Total backup size: %.2f MB\n", float64(totalSize)/1024/1024)
 
+	if totalFailure > 0 {
+		unlock()
+		os.Exit(1)
+	}
 }

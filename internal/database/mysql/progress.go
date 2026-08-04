@@ -17,7 +17,6 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 		return n, err
 	}
 	pw.Bar.IncrBy(n)
-	pw.Bar.SetTotal(pw.Bar.Current()+2048, false)
 	return n, nil
 }
 

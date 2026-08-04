@@ -1,44 +1,41 @@
 package mysql
 
 import (
-	"bytes"
-	"compress/gzip"
+	"os"
 
 	"github.com/vbauerster/mpb/v8"
 )
 
 type CompressedProgressWriter struct {
 	*ProgressWriter
-	gzipWriter *gzip.Writer
-	buffer     *bytes.Buffer
+	file *os.File
 }
 
-func NewCompressedProgressWriter(bar *mpb.Bar) *CompressedProgressWriter {
-	buf := &bytes.Buffer{}
+func NewCompressedProgressWriter(bar *mpb.Bar, filePath string) (*CompressedProgressWriter, error) {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return nil, err
+	}
+
 	pw := &ProgressWriter{
-		Writer: buf,
+		Writer: file,
 		Bar:    bar,
 	}
 
 	return &CompressedProgressWriter{
 		ProgressWriter: pw,
-		gzipWriter:     gzip.NewWriter(pw),
-		buffer:         buf,
-	}
+		file:           file,
+	}, nil
 }
 
 func (cpw *CompressedProgressWriter) Write(p []byte) (int, error) {
-	return cpw.gzipWriter.Write(p)
+	return cpw.ProgressWriter.Write(p)
 }
 
 func (cpw *CompressedProgressWriter) Close() error {
-	if err := cpw.gzipWriter.Close(); err != nil {
+	if err := cpw.ProgressWriter.Close(); err != nil {
+		cpw.file.Close()
 		return err
 	}
-	return cpw.ProgressWriter.Close()
-}
-
-func (cpw *CompressedProgressWriter) Bytes() []byte {
-	cpw.Close()
-	return cpw.buffer.Bytes()
+	return cpw.file.Close()
 }
