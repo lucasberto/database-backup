@@ -23,7 +23,14 @@ volume_writable() {
 }
 
 if ! findmnt -rn "$MOUNTPOINT" >/dev/null; then
-    log "Volume Dados não está montado. Montando via udisksctl..."
+    # NTFS dirty (ex.: desligamento sem finalização limpa) faz o kernel
+    # recusar a montagem. Limpa a flag antes de montar — só com o volume
+    # desmontado. Requer a regra em /etc/sudoers.d/db-backup; se ela não
+    # existir, loga e segue para a tentativa de montagem mesmo assim.
+    log "Volume Dados não está montado. Executando ntfsfix preventivo..."
+    sudo -n /usr/bin/ntfsfix -d "$DEVICE" >> "$LOG_FILE" 2>&1 \
+        || log "Aviso: ntfsfix falhou ou não está autorizado no sudoers."
+    log "Montando via udisksctl..."
     udisksctl mount -b "$DEVICE" >> "$LOG_FILE" 2>&1
 fi
 
