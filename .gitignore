@@ -30,3 +30,7 @@ backup-tool-linux
 
 # Runtime
 logs/
+
+# binário local e script não relacionado
+main
+bcredito-tampermonkey.js
