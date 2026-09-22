@@ -5,7 +5,8 @@
 set -uo pipefail
 
 MOUNTPOINT="/run/media/lucas/Dados"
-DEVICE="/dev/disk/by-uuid/01DCF4F5AAE8F170"   # partição NTFS "Dados" (nvme0n1p1)
+DEVICE="/dev/disk/by-uuid/01DCF4F5AAE8F170"   # partição NTFS "Dados" — sempre por UUID:
+                                              # os nomes /dev/nvmeXn1 trocam entre boots
 PROJECT_DIR="/home/lucas/Projects/TOOLS/database-backup"
 LOG_DIR="$PROJECT_DIR/logs"
 
